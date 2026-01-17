@@ -28,7 +28,7 @@ export type {
   LoginResult,
 } from "./types";
 
-export { mapCheckTypeNumber } from "./types";
+export { mapCheckTypeNumber, TRACKED_DEPARTMENTS } from "./types";
 
 // Client utilities
 export {
@@ -36,8 +36,10 @@ export {
   clearSession,
   isAuthenticated,
   rhidFetch,
-  formatDateForRhid,
 } from "./client";
+
+// Utility functions
+export { formatDateForRhid, isExpiredTokenError } from "./utils";
 
 // Auth API
 export { login, logout } from "./api/auth";
@@ -47,3 +49,12 @@ export { fetchEmployees, fetchActiveEmployees } from "./api/employees";
 
 // Attendance API
 export { fetchPontoChecks, fetchWorksites } from "./api/attendance";
+
+// React Query Hooks (client-side only)
+// Import directly from "@/lib/rhid/hooks" in client components
+export {
+  useEmployees,
+  usePontoChecks,
+  useWorksites,
+  useRefreshRhidData,
+} from "./hooks";

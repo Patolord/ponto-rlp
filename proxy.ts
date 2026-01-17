@@ -6,7 +6,7 @@ const TOKEN_COOKIE_NAME = "rhid_session";
 // Routes that don't require authentication
 const publicRoutes = ["/login"];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Check if the route is public

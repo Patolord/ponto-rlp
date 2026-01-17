@@ -31,6 +31,32 @@ export default function EmployeeList({
 }: EmployeeListProps) {
   const [search, setSearch] = useState("");
 
+  // Parse date from RHID format (handles both ISO and "DD/MM/YYYY HH:mm:ss")
+  const parseRhidDate = (dateStr: string): number => {
+    // Try ISO format first
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date.getTime();
+    }
+    
+    // Try DD/MM/YYYY HH:mm:ss format
+    const match = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+    if (match) {
+      const [, day, month, year, hour, min, sec] = match;
+      return new Date(
+        parseInt(year),
+        parseInt(month) - 1,
+        parseInt(day),
+        parseInt(hour),
+        parseInt(min),
+        parseInt(sec)
+      ).getTime();
+    }
+    
+    // Fallback to 0 if unparseable
+    return 0;
+  };
+
   // Build employee attendance data with first and last checks
   const employeesWithAttendance = useMemo(() => {
     // Map to store first and last checks per employee
@@ -41,9 +67,9 @@ export default function EmployeeList({
       if (!existing) {
         checkData.set(check.funcionarioId, { first: check, last: check });
       } else {
-        const checkTime = new Date(check.dataHora).getTime();
-        const firstTime = new Date(existing.first.dataHora).getTime();
-        const lastTime = new Date(existing.last.dataHora).getTime();
+        const checkTime = parseRhidDate(check.dataHora);
+        const firstTime = parseRhidDate(existing.first.dataHora);
+        const lastTime = parseRhidDate(existing.last.dataHora);
         
         if (checkTime < firstTime) {
           existing.first = check;
@@ -57,13 +83,18 @@ export default function EmployeeList({
     return checkData;
   }, [checks]);
 
-  // Build employee list from employees array or checks if employees is empty
+  // Build employee list by merging employees array with employees found in checks
+  // This ensures we have all employees even if the employees API returns incomplete data
   const employeeList = useMemo(() => {
-    if (employees.length > 0) {
-      return employees;
-    }
-    // Build from checks if no employees loaded
     const uniqueEmployees = new Map<number, Employee>();
+    
+    // First, add all employees from the employees array
+    for (const emp of employees) {
+      uniqueEmployees.set(emp.id, emp);
+    }
+    
+    // Then, add any employees found in checks that aren't in the employees array
+    // This ensures we capture everyone who checked in, even if the employees API is incomplete
     for (const check of checks) {
       if (!uniqueEmployees.has(check.funcionarioId)) {
         uniqueEmployees.set(check.funcionarioId, {
@@ -74,6 +105,7 @@ export default function EmployeeList({
         });
       }
     }
+    
     return Array.from(uniqueEmployees.values());
   }, [employees, checks]);
 
@@ -133,8 +165,29 @@ export default function EmployeeList({
     return statusColors[employee.lastCheck.tipoNumero] || "bg-gray-500";
   };
 
-  const formatTime = (dateStr: string) => {
+  const formatTime = (dateStr: string, fallbackStr?: string) => {
+    // Try parsing as ISO date first
     const date = new Date(dateStr);
+    
+    // If invalid, try parsing DD/MM/YYYY HH:mm:ss format
+    if (isNaN(date.getTime())) {
+      // Try to extract time from dateTimeStr format like "17/01/2026 08:30:00"
+      const match = dateStr.match(/(\d{2}):(\d{2})/);
+      if (match) {
+        return `${match[1]}:${match[2]}`;
+      }
+      
+      // Try fallback string
+      if (fallbackStr) {
+        const fallbackMatch = fallbackStr.match(/(\d{2}):(\d{2})/);
+        if (fallbackMatch) {
+          return `${fallbackMatch[1]}:${fallbackMatch[2]}`;
+        }
+      }
+      
+      return "--:--";
+    }
+    
     return date.toLocaleTimeString("pt-BR", {
       hour: "2-digit",
       minute: "2-digit",
@@ -271,7 +324,7 @@ export default function EmployeeList({
                           )}
                           <span className="flex items-center gap-1 text-xs text-green-500">
                             <Clock className="w-3 h-3" />
-                            {formatTime(employee.firstCheck.dataHora)}
+                            {formatTime(employee.firstCheck.dataHora, employee.firstCheck.dataHoraStr)}
                           </span>
                         </div>
                       )}
@@ -288,7 +341,7 @@ export default function EmployeeList({
                     {employee.isPresent && employee.lastCheck && (
                       <div className="text-right flex-shrink-0">
                         <span className="text-xs text-slate-400 block">
-                          {formatTime(employee.lastCheck.dataHora)}
+                          {formatTime(employee.lastCheck.dataHora, employee.lastCheck.dataHoraStr)}
                         </span>
                         <span className="text-[10px] text-slate-500">
                           {employee.lastCheck.tipo === "entrada" && "Entrada"}

@@ -86,8 +86,13 @@ export type Employee = {
   nome: string;
   foto?: string;
   cargo?: string;
+  departamento?: string;
   ativo: boolean;
 };
+
+/** Departments we track for attendance */
+export const TRACKED_DEPARTMENTS = ["Obra", "Escritorio", "Manutencao"] as const;
+export type TrackedDepartment = (typeof TRACKED_DEPARTMENTS)[number];
 
 /** Ponto check record for the dashboard */
 export type PontoCheck = {

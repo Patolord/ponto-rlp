@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useCallback, useTransition, useMemo } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
-import type { Employee, PontoCheck, Worksite } from "@/lib/rhid";
-import { fetchEmployees, fetchPontoChecks, fetchWorksites } from "@/lib/rhid";
+import {
+  useEmployees,
+  usePontoChecks,
+  useWorksites,
+  useRefreshRhidData,
+} from "@/lib/rhid/hooks";
 import DashboardHeader, { type AttendanceFilter } from "./DashboardHeader";
 import EmployeeList from "./EmployeeList";
 import WorksiteList from "./WorksiteList";
@@ -21,25 +25,30 @@ const LeafletMap = dynamic(() => import("./LeafletMap"), {
   ),
 });
 
-type DashboardProps = {
-  initialEmployees: Employee[];
-  initialChecks: PontoCheck[];
-  initialWorksites: Worksite[];
-};
+export default function Dashboard() {
+  // Fetch data using TanStack Query
+  const { data: employeesResult, isFetching: isFetchingEmployees } =
+    useEmployees();
+  const { data: checksResult, isFetching: isFetchingChecks } = usePontoChecks();
+  const { data: worksitesResult, isFetching: isFetchingWorksites } =
+    useWorksites();
+  const refreshData = useRefreshRhidData();
 
-export default function Dashboard({
-  initialEmployees,
-  initialChecks,
-  initialWorksites,
-}: DashboardProps) {
-  const [employees, setEmployees] = useState(initialEmployees);
-  const [checks, setChecks] = useState(initialChecks);
-  const [worksites, setWorksites] = useState(initialWorksites);
+  // Extract data from results (with fallback to empty arrays)
+  const employees = employeesResult?.success ? employeesResult.data : [];
+  const checks = checksResult?.success ? checksResult.data : [];
+  const worksites = worksitesResult?.success ? worksitesResult.data : [];
+
+  // Loading state
+  const isRefreshing =
+    isFetchingEmployees || isFetchingChecks || isFetchingWorksites;
+
+  // UI state
   const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
   const [selectedWorksite, setSelectedWorksite] = useState<number | null>(null);
   const [activeFilter, setActiveFilter] = useState<number | null>(null); // null = todos
-  const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
-  const [isRefreshing, startRefresh] = useTransition();
+  const [attendanceFilter, setAttendanceFilter] =
+    useState<AttendanceFilter>("all");
 
   // Calculate filter counts based on tipoNumero
   // 0 = entrada, 1 = almoço saída, 2 = retorno, 3 = saída
@@ -63,33 +72,37 @@ export default function Dashboard({
     return counts;
   }, [checks]);
 
+  // Build complete employee set from both employees array and checks
+  // This ensures we have all employees even if the employees API returns incomplete data
+  const allEmployeeIds = useMemo(() => {
+    const ids = new Set<number>();
+
+    // Add all employees from the employees array
+    for (const emp of employees) {
+      ids.add(emp.id);
+    }
+
+    // Add any employees found in checks that might not be in the employees array
+    for (const check of checks) {
+      ids.add(check.funcionarioId);
+    }
+
+    return ids;
+  }, [employees, checks]);
+
   // Calculate present and absent counts
   const presentEmployeeIds = useMemo(
     () => new Set(checks.map((c) => c.funcionarioId)),
     [checks]
   );
   const presentCount = presentEmployeeIds.size;
-  const absentCount = employees.length - presentCount;
+  const totalEmployees = allEmployeeIds.size;
+  const absentCount = totalEmployees - presentCount;
 
   // Handle attendance filter change
   const handleAttendanceFilterChange = (filter: AttendanceFilter) => {
     setAttendanceFilter(filter);
   };
-
-  // Refresh data
-  const handleRefresh = useCallback(() => {
-    startRefresh(async () => {
-      const [employeesResult, checksResult, worksitesResult] = await Promise.all([
-        fetchEmployees(),
-        fetchPontoChecks(),
-        fetchWorksites(),
-      ]);
-
-      if (employeesResult.success) setEmployees(employeesResult.data);
-      if (checksResult.success) setChecks(checksResult.data);
-      if (worksitesResult.success) setWorksites(worksitesResult.data);
-    });
-  }, []);
 
   // Handle filter change
   const handleFilterChange = (filter: number | null) => {
@@ -114,7 +127,7 @@ export default function Dashboard({
     <div className="h-screen flex flex-col bg-slate-900">
       {/* Header */}
       <DashboardHeader
-        totalEmployees={employees.length}
+        totalEmployees={totalEmployees}
         presentCount={presentCount}
         absentCount={absentCount}
         activeFilter={activeFilter}
@@ -122,7 +135,7 @@ export default function Dashboard({
         filterCounts={filterCounts}
         attendanceFilter={attendanceFilter}
         onAttendanceFilterChange={handleAttendanceFilterChange}
-        onRefresh={handleRefresh}
+        onRefresh={refreshData}
         isRefreshing={isRefreshing}
       />
 

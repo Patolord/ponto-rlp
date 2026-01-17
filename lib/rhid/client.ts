@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { RHID_CONFIG } from "./config";
+import { isExpiredTokenError } from "./utils";
 
 /**
  * RHID API Client
@@ -41,26 +42,6 @@ export async function clearSession(): Promise<void> {
 export async function isAuthenticated(): Promise<boolean> {
   const token = await getAccessToken();
   return token !== null;
-}
-
-// ============================================================================
-// Error Detection
-// ============================================================================
-
-/** Check if error response indicates an expired token */
-export function isExpiredTokenError(
-  statusCode: number,
-  responseText: string
-): boolean {
-  // RHID returns 400 with "DoLoginExpirTok" when token is expired
-  if (statusCode === 400 && responseText.includes("DoLoginExpirTok")) {
-    return true;
-  }
-  // Also handle standard 401 Unauthorized
-  if (statusCode === 401) {
-    return true;
-  }
-  return false;
 }
 
 // ============================================================================
@@ -151,14 +132,3 @@ export async function rhidFetch<T>(
   }
 }
 
-// ============================================================================
-// Date Formatting
-// ============================================================================
-
-/** Format date as YYYYMMDD for the RHID API */
-export function formatDateForRhid(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}${month}${day}`;
-}

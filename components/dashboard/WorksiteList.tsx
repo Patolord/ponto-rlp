@@ -30,6 +30,32 @@ export default function WorksiteList({
   const [search, setSearch] = useState("");
   const [expandedWorksite, setExpandedWorksite] = useState<number | null>(null);
 
+  // Parse date from RHID format (handles both ISO and "DD/MM/YYYY HH:mm:ss")
+  const parseRhidDate = (dateStr: string): number => {
+    // Try ISO format first
+    let date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date.getTime();
+    }
+    
+    // Try DD/MM/YYYY HH:mm:ss format
+    const match = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+    if (match) {
+      const [, day, month, year, hour, min, sec] = match;
+      return new Date(
+        parseInt(year),
+        parseInt(month) - 1,
+        parseInt(day),
+        parseInt(hour),
+        parseInt(min),
+        parseInt(sec)
+      ).getTime();
+    }
+    
+    // Fallback to 0 if unparseable
+    return 0;
+  };
+
   // Build map of employees per worksite from checks
   const employeesByWorksite = useMemo(() => {
     const wsMap = new Map<number, Map<number, EmployeeAtWorksite>>();
@@ -43,7 +69,7 @@ export default function WorksiteList({
       
       const empMap = wsMap.get(check.obraId)!;
       const existing = empMap.get(check.funcionarioId);
-      const checkTime = new Date(check.dataHora).getTime();
+      const checkTime = parseRhidDate(check.dataHora);
       
       if (!existing) {
         empMap.set(check.funcionarioId, {
@@ -55,8 +81,8 @@ export default function WorksiteList({
           lastCheckType: check.tipo,
         });
       } else {
-        const firstTime = new Date(existing.firstCheckIn).getTime();
-        const lastTime = new Date(existing.lastCheck).getTime();
+        const firstTime = parseRhidDate(existing.firstCheckIn);
+        const lastTime = parseRhidDate(existing.lastCheck);
         
         if (checkTime < firstTime) {
           existing.firstCheckIn = check.dataHora;
@@ -86,11 +112,22 @@ export default function WorksiteList({
   );
 
   const formatTime = (dateStr: string) => {
+    // Try parsing as ISO date first
     const date = new Date(dateStr);
-    return date.toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleTimeString("pt-BR", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    }
+    
+    // Try to extract time from DD/MM/YYYY HH:mm:ss format
+    const match = dateStr.match(/(\d{2}):(\d{2})/);
+    if (match) {
+      return `${match[1]}:${match[2]}`;
+    }
+    
+    return "--:--";
   };
 
   const handleWorksiteClick = (worksiteId: number, isSelected: boolean) => {
@@ -193,18 +230,26 @@ export default function WorksiteList({
                         <span className="text-xs">{worksite.funcionariosCount}</span>
                       </div>
                       
-                      {/* Expand button */}
+                      {/* Expand indicator */}
                       {employeeList.length > 0 && (
-                        <button
+                        <div
+                          role="button"
+                          tabIndex={0}
                           onClick={(e) => toggleExpand(e, worksite.id)}
-                          className="p-1 hover:bg-white/10 rounded"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              toggleExpand(e as unknown as React.MouseEvent, worksite.id);
+                            }
+                          }}
+                          className="p-1 hover:bg-white/10 rounded cursor-pointer"
                         >
                           {isExpanded ? (
                             <ChevronUp className="w-4 h-4 text-slate-400" />
                           ) : (
                             <ChevronDown className="w-4 h-4 text-slate-400" />
                           )}
-                        </button>
+                        </div>
                       )}
                     </div>
                   </button>

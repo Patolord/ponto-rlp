@@ -1,7 +1,8 @@
 "use server";
 
 import { DEFAULT_COMPANY_ID } from "../config";
-import { rhidFetch, formatDateForRhid } from "../client";
+import { rhidFetch } from "../client";
+import { formatDateForRhid } from "../utils";
 import type {
   EmployeeCheckIn,
   PontoCheck,
@@ -64,17 +65,30 @@ export async function fetchPontoChecks(
       continue;
     }
 
-    for (const record of employee.listAfdMobilePerson) {
-      // Skip invalid coordinates
-      if (!record.latitude || !record.longitude) continue;
+    // Sort records by dateTime to determine sequential position
+    const sortedRecords = [...employee.listAfdMobilePerson]
+      .filter((r) => r.latitude && r.longitude)
+      .sort((a, b) => {
+        const dateA = new Date(a.dateTime).getTime();
+        const dateB = new Date(b.dateTime).getTime();
+        return dateA - dateB;
+      });
+
+    // Map sequential position to check type
+    // 1st punch = entrada (0), 2nd = almoco_saida (1), 3rd = almoco_retorno (2), 4th = saida (3)
+    sortedRecords.forEach((record, index) => {
+      // Determine type based on position in sequence (0-indexed)
+      // index 0 -> entrada, 1 -> almoco_saida, 2 -> almoco_retorno, 3 -> saida
+      // For 5+ punches, cycle or use saida
+      const sequentialType = Math.min(index, 3);
 
       checks.push({
         id: `${person.id}-${record.id}`,
         funcionarioId: person.id,
         funcionarioNome: person.name,
         funcionarioFoto: record.photoURL || undefined,
-        tipo: mapCheckTypeNumber(record.Tipo),
-        tipoNumero: record.Tipo,
+        tipo: mapCheckTypeNumber(sequentialType),
+        tipoNumero: sequentialType,
         dataHora: record.dateTime,
         dataHoraStr: record.dateTimeStr,
         latitude: record.latitude,
@@ -91,7 +105,7 @@ export async function fetchPontoChecks(
             }
           : undefined,
       });
-    }
+    });
   }
 
   console.log(
