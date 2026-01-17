@@ -2,10 +2,12 @@
 
 import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useQuery as useConvexQuery } from "convex/react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/convex/_generated/api";
 import type { Employee, PontoCheck } from "@/lib/rhid";
 import { syncTodayAttendance, setDailyCost } from "@/app/actions/sync";
+import { fetchMonthlyStats } from "@/app/actions/stats";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,6 +26,9 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Database,
+  Wifi,
+  Loader2,
 } from "lucide-react";
 
 type StatsContentProps = {
@@ -33,6 +38,23 @@ type StatsContentProps = {
 };
 
 type TabType = "today" | "history" | "settings";
+type DataSource = "rhid" | "convex";
+
+// Month names in Portuguese
+const MONTH_NAMES = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
 
 export default function StatsContent({
   employees,
@@ -51,28 +73,71 @@ export default function StatsContent({
   const [expandedEmployee, setExpandedEmployee] = useState<number | null>(null);
   const [expandedWorksite, setExpandedWorksite] = useState<number | null>(null);
 
-  // Date range for historical data (default: last 30 days)
-  const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split("T")[0];
-  });
-  const [endDate, setEndDate] = useState(() => {
-    return new Date().toISOString().split("T")[0];
+  // Data source toggle: RHID (live) or Convex (archive)
+  const [dataSource, setDataSource] = useState<DataSource>("rhid");
+
+  // Month/Year selectors (default: current month)
+  const [selectedMonth, setSelectedMonth] = useState(() => new Date().getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(() => new Date().getFullYear());
+
+  // Generate year options (last 3 years)
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return [currentYear, currentYear - 1, currentYear - 2];
+  }, []);
+
+  // Convert month/year to date range for Convex queries
+  const { startDate, endDate } = useMemo(() => {
+    const start = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-01`;
+    const lastDay = new Date(selectedYear, selectedMonth, 0).getDate();
+    const end = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    return { startDate: start, endDate: end };
+  }, [selectedYear, selectedMonth]);
+
+  // TanStack Query for RHID data (with caching)
+  const {
+    data: rhidData,
+    isLoading: isRhidLoading,
+    error: rhidError,
+    refetch: refetchRhid,
+  } = useQuery({
+    queryKey: ["rhid-monthly-stats", selectedYear, selectedMonth],
+    queryFn: async () => {
+      const result = await fetchMonthlyStats(selectedYear, selectedMonth);
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      return result.data;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+    enabled: dataSource === "rhid",
   });
 
-  // Query historical data from Convex
-  const manDaysByEmployee = useQuery(api.attendance.getManDaysByEmployee, {
-    startDate,
-    endDate,
-  });
+  // Convex queries for archive data
+  const convexManDaysByEmployee = useConvexQuery(
+    api.attendance.getManDaysByEmployee,
+    dataSource === "convex" ? { startDate, endDate } : "skip"
+  );
 
-  const manDaysByWorksite = useQuery(api.attendance.getManDaysByWorksite, {
-    startDate,
-    endDate,
-  });
+  const convexManDaysByWorksite = useConvexQuery(
+    api.attendance.getManDaysByWorksite,
+    dataSource === "convex" ? { startDate, endDate } : "skip"
+  );
 
-  const recordedDates = useQuery(api.attendance.getRecordedDates, {});
+  const recordedDates = useConvexQuery(api.attendance.getRecordedDates, {});
+
+  // Unified data based on selected source
+  const manDaysByEmployee = dataSource === "rhid" 
+    ? rhidData?.manDaysByEmployee 
+    : convexManDaysByEmployee;
+
+  const manDaysByWorksite = dataSource === "rhid" 
+    ? rhidData?.manDaysByWorksite 
+    : convexManDaysByWorksite;
+
+  const isLoading = dataSource === "rhid" 
+    ? isRhidLoading 
+    : convexManDaysByEmployee === undefined;
 
   // Calculate today's statistics
   const todayStats = useMemo(() => {
@@ -186,25 +251,30 @@ export default function StatsContent({
 
   // Calculate historical totals
   const historyStats = useMemo(() => {
-    if (!manDaysByEmployee || !manDaysByWorksite) {
-      return null;
+    if (dataSource === "rhid" && rhidData) {
+      return {
+        totalManDays: rhidData.totalManDays,
+        totalCost: rhidData.totalManDays * dailyCost,
+        uniqueEmployees: rhidData.uniqueEmployees,
+        uniqueWorksites: rhidData.uniqueWorksites,
+      };
     }
 
-    const totalManDays = manDaysByEmployee.reduce(
-      (sum, e) => sum + e.totalDays,
-      0
-    );
-    const totalCost = totalManDays * dailyCost;
-    const uniqueEmployees = manDaysByEmployee.length;
-    const uniqueWorksites = manDaysByWorksite.length;
+    if (dataSource === "convex" && convexManDaysByEmployee && convexManDaysByWorksite) {
+      const totalManDays = convexManDaysByEmployee.reduce(
+        (sum, e) => sum + e.totalDays,
+        0
+      );
+      return {
+        totalManDays,
+        totalCost: totalManDays * dailyCost,
+        uniqueEmployees: convexManDaysByEmployee.length,
+        uniqueWorksites: convexManDaysByWorksite.length,
+      };
+    }
 
-    return {
-      totalManDays,
-      totalCost,
-      uniqueEmployees,
-      uniqueWorksites,
-    };
-  }, [manDaysByEmployee, manDaysByWorksite, dailyCost]);
+    return null;
+  }, [dataSource, rhidData, convexManDaysByEmployee, convexManDaysByWorksite, dailyCost]);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -482,41 +552,106 @@ export default function StatsContent({
         {/* History Tab */}
         {activeTab === "history" && (
           <>
-            {/* Date Range Filter */}
+            {/* Period and Source Selection */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 mb-6">
-              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-slate-400" />
-                Período
-              </h2>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-start justify-between gap-6">
+                {/* Month/Year Selectors */}
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">
-                    Data Inicial
-                  </label>
-                  <Input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="bg-white/5 border-white/10 text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">
-                    Data Final
-                  </label>
-                  <Input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="bg-white/5 border-white/10 text-white"
-                  />
-                </div>
-                {recordedDates && recordedDates.length > 0 && (
-                  <div className="text-sm text-slate-500">
-                    {recordedDates.length} dias com registros salvos
+                  <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-slate-400" />
+                    Período
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">
+                        Mês
+                      </label>
+                      <select
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                        className="bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {MONTH_NAMES.map((name, index) => (
+                          <option key={index} value={index + 1} className="bg-slate-800">
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">
+                        Ano
+                      </label>
+                      <select
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(Number(e.target.value))}
+                        className="bg-white/5 border border-white/10 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        {yearOptions.map((year) => (
+                          <option key={year} value={year} className="bg-slate-800">
+                            {year}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {dataSource === "rhid" && (
+                      <Button
+                        onClick={() => refetchRhid()}
+                        disabled={isRhidLoading}
+                        variant="ghost"
+                        size="sm"
+                        className="mt-5 text-slate-400 hover:text-white"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${isRhidLoading ? "animate-spin" : ""}`} />
+                      </Button>
+                    )}
                   </div>
-                )}
+                </div>
+
+                {/* Data Source Toggle */}
+                <div>
+                  <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                    <Database className="w-5 h-5 text-slate-400" />
+                    Fonte de Dados
+                  </h2>
+                  <div className="flex rounded-lg overflow-hidden border border-white/10">
+                    <button
+                      onClick={() => setDataSource("rhid")}
+                      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                        dataSource === "rhid"
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white/5 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <Wifi className="w-4 h-4" />
+                      Tempo Real
+                    </button>
+                    <button
+                      onClick={() => setDataSource("convex")}
+                      className={`flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                        dataSource === "convex"
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white/5 text-slate-400 hover:text-white"
+                      }`}
+                    >
+                      <Database className="w-4 h-4" />
+                      Arquivo
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-2">
+                    {dataSource === "rhid" 
+                      ? "Consultando RHID diretamente" 
+                      : `${recordedDates?.length ?? 0} dias salvos no arquivo`}
+                  </p>
+                </div>
               </div>
+
+              {/* Error message */}
+              {dataSource === "rhid" && rhidError && (
+                <div className="mt-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-sm">
+                  Erro ao carregar dados: {rhidError.message}
+                </div>
+              )}
             </div>
 
             {/* History Summary */}
@@ -653,11 +788,20 @@ export default function StatsContent({
                       ))}
                   </div>
                 ) : (
-                  <p className="text-slate-500 text-center py-8">
-                    {manDaysByEmployee === undefined
-                      ? "Carregando..."
-                      : "Nenhum dado histórico encontrado. Clique em 'Salvar Dia no Histórico' para começar."}
-                  </p>
+                  <div className="text-center py-8">
+                    {isLoading ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+                        <p className="text-slate-500">Carregando...</p>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500">
+                        {dataSource === "rhid"
+                          ? "Nenhum registro encontrado para este período."
+                          : "Nenhum dado no arquivo. Clique em 'Salvar Dia no Histórico' para arquivar."}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -738,11 +882,20 @@ export default function StatsContent({
                       ))}
                   </div>
                 ) : (
-                  <p className="text-slate-500 text-center py-8">
-                    {manDaysByWorksite === undefined
-                      ? "Carregando..."
-                      : "Nenhum dado histórico encontrado. Clique em 'Salvar Dia no Histórico' para começar."}
-                  </p>
+                  <div className="text-center py-8">
+                    {isLoading ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+                        <p className="text-slate-500">Carregando...</p>
+                      </div>
+                    ) : (
+                      <p className="text-slate-500">
+                        {dataSource === "rhid"
+                          ? "Nenhum registro encontrado para este período."
+                          : "Nenhum dado no arquivo. Clique em 'Salvar Dia no Histórico' para arquivar."}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
