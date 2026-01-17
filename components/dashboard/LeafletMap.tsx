@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { PontoCheck, Worksite } from "@/app/actions/rhid";
+import type { PontoCheck, Worksite } from "@/lib/rhid";
 
 type LeafletMapProps = {
   checks: PontoCheck[];

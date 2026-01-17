@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useTransition, useMemo } from "react";
 import dynamic from "next/dynamic";
-import type { Employee, PontoCheck, Worksite } from "@/app/actions/rhid";
-import { fetchEmployees, fetchPontoChecks, fetchWorksites } from "@/app/actions/rhid";
-import DashboardHeader from "./DashboardHeader";
+import type { Employee, PontoCheck, Worksite } from "@/lib/rhid";
+import { fetchEmployees, fetchPontoChecks, fetchWorksites } from "@/lib/rhid";
+import DashboardHeader, { type AttendanceFilter } from "./DashboardHeader";
 import EmployeeList from "./EmployeeList";
 import WorksiteList from "./WorksiteList";
 
@@ -38,6 +38,7 @@ export default function Dashboard({
   const [selectedEmployee, setSelectedEmployee] = useState<number | null>(null);
   const [selectedWorksite, setSelectedWorksite] = useState<number | null>(null);
   const [activeFilter, setActiveFilter] = useState<number | null>(null); // null = todos
+  const [attendanceFilter, setAttendanceFilter] = useState<AttendanceFilter>("all");
   const [isRefreshing, startRefresh] = useTransition();
 
   // Calculate filter counts based on tipoNumero
@@ -62,12 +63,18 @@ export default function Dashboard({
     return counts;
   }, [checks]);
 
-  // Calculate absent count
+  // Calculate present and absent counts
   const presentEmployeeIds = useMemo(
     () => new Set(checks.map((c) => c.funcionarioId)),
     [checks]
   );
-  const absentCount = employees.length - presentEmployeeIds.size;
+  const presentCount = presentEmployeeIds.size;
+  const absentCount = employees.length - presentCount;
+
+  // Handle attendance filter change
+  const handleAttendanceFilterChange = (filter: AttendanceFilter) => {
+    setAttendanceFilter(filter);
+  };
 
   // Refresh data
   const handleRefresh = useCallback(() => {
@@ -108,10 +115,13 @@ export default function Dashboard({
       {/* Header */}
       <DashboardHeader
         totalEmployees={employees.length}
+        presentCount={presentCount}
         absentCount={absentCount}
         activeFilter={activeFilter}
         onFilterChange={handleFilterChange}
         filterCounts={filterCounts}
+        attendanceFilter={attendanceFilter}
+        onAttendanceFilterChange={handleAttendanceFilterChange}
         onRefresh={handleRefresh}
         isRefreshing={isRefreshing}
       />
@@ -119,12 +129,13 @@ export default function Dashboard({
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left sidebar - Employees */}
-        <aside className="w-72 bg-slate-900 border-r border-white/10 flex flex-col">
+        <aside className="w-80 bg-slate-900 border-r border-white/10 flex flex-col">
           <EmployeeList
             employees={employees}
             checks={checks}
             selectedEmployee={selectedEmployee}
             onSelectEmployee={handleSelectEmployee}
+            attendanceFilter={attendanceFilter}
           />
         </aside>
 
@@ -140,9 +151,10 @@ export default function Dashboard({
         </main>
 
         {/* Right sidebar - Worksites */}
-        <aside className="w-64 bg-slate-900 border-l border-white/10 flex flex-col">
+        <aside className="w-72 bg-slate-900 border-l border-white/10 flex flex-col">
           <WorksiteList
             worksites={worksites}
+            checks={checks}
             selectedWorksite={selectedWorksite}
             onSelectWorksite={handleSelectWorksite}
           />

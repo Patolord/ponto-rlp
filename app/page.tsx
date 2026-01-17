@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import { isAuthenticated } from "@/app/actions/auth";
 import {
+  isAuthenticated,
   fetchEmployees,
   fetchPontoChecks,
   fetchWorksites,
-} from "@/app/actions/rhid";
+} from "@/lib/rhid";
 import Dashboard from "@/components/dashboard/Dashboard";
 
 export default async function DashboardPage() {
@@ -22,7 +22,12 @@ export default async function DashboardPage() {
   ]);
 
   // Handle errors - redirect to login if session expired
-  if (!employeesResult.success && employeesResult.error === "Sessão expirada") {
+  const sessionExpired =
+    (!employeesResult.success && employeesResult.error === "Sessão expirada") ||
+    (!checksResult.success && checksResult.error === "Sessão expirada") ||
+    (!worksitesResult.success && worksitesResult.error === "Sessão expirada");
+
+  if (sessionExpired) {
     redirect("/login");
   }
 

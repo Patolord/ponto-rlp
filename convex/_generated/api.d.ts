@@ -8,7 +8,8 @@
  * @module
  */
 
-import type * as myFunctions from "../myFunctions.js";
+import type * as attendance from "../attendance.js";
+import type * as settings from "../settings.js";
 
 import type {
   ApiFromModules,
@@ -17,7 +18,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  myFunctions: typeof myFunctions;
+  attendance: typeof attendance;
+  settings: typeof settings;
 }>;
 
 /**

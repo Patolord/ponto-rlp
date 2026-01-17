@@ -2,14 +2,24 @@
 
 import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import type { Employee, PontoCheck } from "@/app/actions/rhid";
-import { Search, Users } from "lucide-react";
+import type { Employee, PontoCheck } from "@/lib/rhid";
+import { Search, Users, Clock, MapPin, AlertCircle } from "lucide-react";
+import type { AttendanceFilter } from "./DashboardHeader";
+
+export type EmployeeWithAttendance = Employee & {
+  isPresent: boolean;
+  firstCheck?: PontoCheck;
+  lastCheck?: PontoCheck;
+  worksiteName?: string;
+  worksiteId?: number;
+};
 
 type EmployeeListProps = {
   employees: Employee[];
   checks: PontoCheck[];
   selectedEmployee: number | null;
   onSelectEmployee: (id: number | null) => void;
+  attendanceFilter: AttendanceFilter;
 };
 
 export default function EmployeeList({
@@ -17,23 +27,37 @@ export default function EmployeeList({
   checks,
   selectedEmployee,
   onSelectEmployee,
+  attendanceFilter,
 }: EmployeeListProps) {
   const [search, setSearch] = useState("");
 
-  // Get employees who have checked in today with their latest check
-  const employeesWithChecks = useMemo(() => {
-    const checkMap = new Map<number, PontoCheck>();
+  // Build employee attendance data with first and last checks
+  const employeesWithAttendance = useMemo(() => {
+    // Map to store first and last checks per employee
+    const checkData = new Map<number, { first: PontoCheck; last: PontoCheck }>();
+    
     for (const check of checks) {
-      // Keep the latest check for each employee
-      const existing = checkMap.get(check.funcionarioId);
-      if (!existing || new Date(check.dataHora) > new Date(existing.dataHora)) {
-        checkMap.set(check.funcionarioId, check);
+      const existing = checkData.get(check.funcionarioId);
+      if (!existing) {
+        checkData.set(check.funcionarioId, { first: check, last: check });
+      } else {
+        const checkTime = new Date(check.dataHora).getTime();
+        const firstTime = new Date(existing.first.dataHora).getTime();
+        const lastTime = new Date(existing.last.dataHora).getTime();
+        
+        if (checkTime < firstTime) {
+          existing.first = check;
+        }
+        if (checkTime > lastTime) {
+          existing.last = check;
+        }
       }
     }
-    return checkMap;
+    
+    return checkData;
   }, [checks]);
 
-  // Build employee list from checks (if employees array is empty, build from checks)
+  // Build employee list from employees array or checks if employees is empty
   const employeeList = useMemo(() => {
     if (employees.length > 0) {
       return employees;
@@ -53,21 +77,50 @@ export default function EmployeeList({
     return Array.from(uniqueEmployees.values());
   }, [employees, checks]);
 
-  // Filter employees by search
+  // Build enhanced employee list with attendance data
+  const enhancedEmployees: EmployeeWithAttendance[] = useMemo(() => {
+    return employeeList.map((emp) => {
+      const checkInfo = employeesWithAttendance.get(emp.id);
+      return {
+        ...emp,
+        isPresent: !!checkInfo,
+        firstCheck: checkInfo?.first,
+        lastCheck: checkInfo?.last,
+        worksiteName: checkInfo?.first.obraNome,
+        worksiteId: checkInfo?.first.obraId,
+      };
+    });
+  }, [employeeList, employeesWithAttendance]);
+
+  // Filter employees by search and attendance filter
   const filteredEmployees = useMemo(() => {
     const searchLower = search.toLowerCase();
-    return employeeList
-      .filter((emp) => emp.nome.toLowerCase().includes(searchLower))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [employeeList, search]);
+    return enhancedEmployees
+      .filter((emp) => {
+        // Search filter
+        if (!emp.nome.toLowerCase().includes(searchLower)) return false;
+        
+        // Attendance filter
+        if (attendanceFilter === "present" && !emp.isPresent) return false;
+        if (attendanceFilter === "missing" && emp.isPresent) return false;
+        
+        return true;
+      })
+      .sort((a, b) => {
+        // When showing missing, keep them at top
+        if (attendanceFilter === "missing") {
+          return a.nome.localeCompare(b.nome);
+        }
+        // Otherwise, sort present first, then by name
+        if (a.isPresent !== b.isPresent) {
+          return a.isPresent ? -1 : 1;
+        }
+        return a.nome.localeCompare(b.nome);
+      });
+  }, [enhancedEmployees, search, attendanceFilter]);
 
-  // Count present employees
-  const presentCount = employeesWithChecks.size;
-  const absentCount = employeeList.length - presentCount;
-
-  const getCheckStatus = (employeeId: number) => {
-    const check = employeesWithChecks.get(employeeId);
-    if (!check) return null;
+  const getCheckStatus = (employee: EmployeeWithAttendance) => {
+    if (!employee.lastCheck) return null;
 
     // 0=entrada (green), 1=almoco (amber), 2=retorno (blue), 3=saida (red)
     const statusColors: Record<number, string> = {
@@ -77,7 +130,26 @@ export default function EmployeeList({
       3: "bg-red-500",
     };
 
-    return statusColors[check.tipoNumero] || "bg-gray-500";
+    return statusColors[employee.lastCheck.tipoNumero] || "bg-gray-500";
+  };
+
+  const formatTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const getFilterLabel = () => {
+    switch (attendanceFilter) {
+      case "present":
+        return "Presentes";
+      case "missing":
+        return "Ausentes";
+      default:
+        return "Funcionários";
+    }
   };
 
   return (
@@ -88,14 +160,9 @@ export default function EmployeeList({
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-slate-400" />
             <span className="text-sm font-medium text-slate-300">
-              Funcionários ({filteredEmployees.length})
+              {getFilterLabel()} ({filteredEmployees.length})
             </span>
           </div>
-          {absentCount > 0 && (
-            <span className="px-2 py-0.5 text-xs font-medium bg-red-500/20 text-red-400 rounded-full">
-              {absentCount} ausentes
-            </span>
-          )}
         </div>
 
         {/* Search */}
@@ -115,14 +182,17 @@ export default function EmployeeList({
       <div className="flex-1 overflow-y-auto">
         {filteredEmployees.length === 0 ? (
           <div className="p-4 text-center text-slate-500 text-sm">
-            Nenhum funcionário encontrado
+            {attendanceFilter === "missing"
+              ? "Todos os funcionários registraram ponto hoje!"
+              : attendanceFilter === "present"
+                ? "Nenhum funcionário presente"
+                : "Nenhum funcionário encontrado"}
           </div>
         ) : (
           <ul className="divide-y divide-white/5">
             {filteredEmployees.map((employee) => {
               const isSelected = selectedEmployee === employee.id;
-              const checkStatus = getCheckStatus(employee.id);
-              const check = employeesWithChecks.get(employee.id);
+              const checkStatus = getCheckStatus(employee);
 
               return (
                 <li key={employee.id}>
@@ -133,30 +203,44 @@ export default function EmployeeList({
                     className={`w-full px-4 py-3 flex items-center gap-3 transition-colors text-left ${
                       isSelected
                         ? "bg-indigo-500/20"
-                        : "hover:bg-white/5"
+                        : employee.isPresent
+                          ? "hover:bg-white/5"
+                          : "hover:bg-red-500/10 bg-red-500/5"
                     }`}
                   >
                     {/* Avatar */}
-                    <div className="relative">
+                    <div className="relative flex-shrink-0">
                       {employee.foto ? (
                         <img
                           src={employee.foto}
                           alt={employee.nome}
-                          className="w-9 h-9 rounded-full object-cover"
+                          className={`w-10 h-10 rounded-full object-cover ${
+                            !employee.isPresent ? "opacity-50 grayscale" : ""
+                          }`}
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = "none";
                           }}
                         />
                       ) : (
-                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-medium text-sm">
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-sm ${
+                            employee.isPresent
+                              ? "bg-gradient-to-br from-indigo-500 to-blue-600"
+                              : "bg-gradient-to-br from-slate-600 to-slate-700"
+                          }`}
+                        >
                           {employee.nome.charAt(0).toUpperCase()}
                         </div>
                       )}
                       {/* Status indicator */}
-                      {checkStatus && (
+                      {checkStatus ? (
                         <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${checkStatus}`}
+                          className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-900 ${checkStatus}`}
                         />
+                      ) : (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-900 bg-slate-600 flex items-center justify-center">
+                          <AlertCircle className="w-2 h-2 text-slate-400" />
+                        </span>
                       )}
                     </div>
 
@@ -164,26 +248,55 @@ export default function EmployeeList({
                     <div className="flex-1 min-w-0">
                       <p
                         className={`text-sm font-medium truncate ${
-                          isSelected ? "text-white" : "text-slate-200"
+                          isSelected
+                            ? "text-white"
+                            : employee.isPresent
+                              ? "text-slate-200"
+                              : "text-red-300"
                         }`}
                       >
                         {employee.nome}
                       </p>
-                      {check?.obraNome && (
-                        <p className="text-xs text-slate-500 truncate">
-                          {check.obraNome}
+                      
+                      {/* Present: Show worksite and first check-in time */}
+                      {employee.isPresent && employee.firstCheck && (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {employee.worksiteName && (
+                            <span className="flex items-center gap-1 text-xs text-slate-500">
+                              <MapPin className="w-3 h-3" />
+                              <span className="truncate max-w-[100px]">
+                                {employee.worksiteName}
+                              </span>
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1 text-xs text-green-500">
+                            <Clock className="w-3 h-3" />
+                            {formatTime(employee.firstCheck.dataHora)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {/* Missing: Show warning */}
+                      {!employee.isPresent && (
+                        <p className="text-xs text-red-400 mt-0.5">
+                          Sem registro hoje
                         </p>
                       )}
                     </div>
 
-                    {/* Time badge */}
-                    {check && (
-                      <span className="text-xs text-slate-400">
-                        {check.dataHoraStr || new Date(check.dataHora).toLocaleTimeString("pt-BR", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                    {/* Current status time badge (last check) */}
+                    {employee.isPresent && employee.lastCheck && (
+                      <div className="text-right flex-shrink-0">
+                        <span className="text-xs text-slate-400 block">
+                          {formatTime(employee.lastCheck.dataHora)}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {employee.lastCheck.tipo === "entrada" && "Entrada"}
+                          {employee.lastCheck.tipo === "almoco_saida" && "Almoço"}
+                          {employee.lastCheck.tipo === "almoco_retorno" && "Retorno"}
+                          {employee.lastCheck.tipo === "saida" && "Saída"}
+                        </span>
+                      </div>
                     )}
                   </button>
                 </li>

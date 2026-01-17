@@ -2,21 +2,74 @@
 
 import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import type { Worksite } from "@/app/actions/rhid";
-import { Search, MapPin, Users } from "lucide-react";
+import type { Worksite, PontoCheck } from "@/lib/rhid";
+import { Search, MapPin, Users, Clock, ChevronDown, ChevronUp } from "lucide-react";
+
+type EmployeeAtWorksite = {
+  id: number;
+  name: string;
+  foto?: string;
+  firstCheckIn: string;
+  lastCheck: string;
+  lastCheckType: string;
+};
 
 type WorksiteListProps = {
   worksites: Worksite[];
+  checks: PontoCheck[];
   selectedWorksite: number | null;
   onSelectWorksite: (id: number | null) => void;
 };
 
 export default function WorksiteList({
   worksites,
+  checks,
   selectedWorksite,
   onSelectWorksite,
 }: WorksiteListProps) {
   const [search, setSearch] = useState("");
+  const [expandedWorksite, setExpandedWorksite] = useState<number | null>(null);
+
+  // Build map of employees per worksite from checks
+  const employeesByWorksite = useMemo(() => {
+    const wsMap = new Map<number, Map<number, EmployeeAtWorksite>>();
+    
+    for (const check of checks) {
+      if (!check.obraId) continue;
+      
+      if (!wsMap.has(check.obraId)) {
+        wsMap.set(check.obraId, new Map());
+      }
+      
+      const empMap = wsMap.get(check.obraId)!;
+      const existing = empMap.get(check.funcionarioId);
+      const checkTime = new Date(check.dataHora).getTime();
+      
+      if (!existing) {
+        empMap.set(check.funcionarioId, {
+          id: check.funcionarioId,
+          name: check.funcionarioNome,
+          foto: check.funcionarioFoto,
+          firstCheckIn: check.dataHora,
+          lastCheck: check.dataHora,
+          lastCheckType: check.tipo,
+        });
+      } else {
+        const firstTime = new Date(existing.firstCheckIn).getTime();
+        const lastTime = new Date(existing.lastCheck).getTime();
+        
+        if (checkTime < firstTime) {
+          existing.firstCheckIn = check.dataHora;
+        }
+        if (checkTime > lastTime) {
+          existing.lastCheck = check.dataHora;
+          existing.lastCheckType = check.tipo;
+        }
+      }
+    }
+    
+    return wsMap;
+  }, [checks]);
 
   // Filter worksites by search
   const filteredWorksites = useMemo(() => {
@@ -31,6 +84,29 @@ export default function WorksiteList({
     (sum, ws) => sum + ws.funcionariosCount,
     0
   );
+
+  const formatTime = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const handleWorksiteClick = (worksiteId: number, isSelected: boolean) => {
+    if (isSelected) {
+      onSelectWorksite(null);
+      setExpandedWorksite(null);
+    } else {
+      onSelectWorksite(worksiteId);
+      setExpandedWorksite(worksiteId);
+    }
+  };
+
+  const toggleExpand = (e: React.MouseEvent, worksiteId: number) => {
+    e.stopPropagation();
+    setExpandedWorksite(expandedWorksite === worksiteId ? null : worksiteId);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -68,13 +144,16 @@ export default function WorksiteList({
           <ul className="divide-y divide-white/5">
             {filteredWorksites.map((worksite) => {
               const isSelected = selectedWorksite === worksite.id;
+              const isExpanded = expandedWorksite === worksite.id;
+              const employeesAtSite = employeesByWorksite.get(worksite.id);
+              const employeeList = employeesAtSite 
+                ? Array.from(employeesAtSite.values()).sort((a, b) => a.name.localeCompare(b.name))
+                : [];
 
               return (
                 <li key={worksite.id}>
                   <button
-                    onClick={() =>
-                      onSelectWorksite(isSelected ? null : worksite.id)
-                    }
+                    onClick={() => handleWorksiteClick(worksite.id, isSelected)}
                     className={`w-full px-4 py-3 flex items-center gap-3 transition-colors text-left ${
                       isSelected
                         ? "bg-indigo-500/20"
@@ -83,7 +162,7 @@ export default function WorksiteList({
                   >
                     {/* Icon */}
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
                         isSelected
                           ? "bg-indigo-500"
                           : "bg-white/10"
@@ -108,11 +187,74 @@ export default function WorksiteList({
                     </div>
 
                     {/* Employee count */}
-                    <div className="flex items-center gap-1 text-slate-400">
-                      <Users className="w-3.5 h-3.5" />
-                      <span className="text-xs">{worksite.funcionariosCount}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 text-slate-400">
+                        <Users className="w-3.5 h-3.5" />
+                        <span className="text-xs">{worksite.funcionariosCount}</span>
+                      </div>
+                      
+                      {/* Expand button */}
+                      {employeeList.length > 0 && (
+                        <button
+                          onClick={(e) => toggleExpand(e, worksite.id)}
+                          className="p-1 hover:bg-white/10 rounded"
+                        >
+                          {isExpanded ? (
+                            <ChevronUp className="w-4 h-4 text-slate-400" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-slate-400" />
+                          )}
+                        </button>
+                      )}
                     </div>
                   </button>
+                  
+                  {/* Expanded employee list */}
+                  {isExpanded && employeeList.length > 0 && (
+                    <div className="bg-white/5 border-t border-white/5">
+                      <div className="px-4 py-2 border-b border-white/5">
+                        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                          Funcionários na obra
+                        </span>
+                      </div>
+                      <ul className="divide-y divide-white/5">
+                        {employeeList.map((emp) => (
+                          <li key={emp.id} className="px-4 py-2 flex items-center gap-3">
+                            {/* Avatar */}
+                            <div className="flex-shrink-0">
+                              {emp.foto ? (
+                                <img
+                                  src={emp.foto}
+                                  alt={emp.name}
+                                  className="w-7 h-7 rounded-full object-cover"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = "none";
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-medium text-xs">
+                                  {emp.name.charAt(0).toUpperCase()}
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Name */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-300 truncate">
+                                {emp.name}
+                              </p>
+                            </div>
+                            
+                            {/* Check-in time */}
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                              <Clock className="w-3 h-3" />
+                              {formatTime(emp.firstCheckIn)}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </li>
               );
             })}

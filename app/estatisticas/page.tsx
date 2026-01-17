@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
-import { isAuthenticated } from "@/app/actions/auth";
 import {
+  isAuthenticated,
   fetchEmployees,
   fetchPontoChecks,
-} from "@/app/actions/rhid";
+} from "@/lib/rhid";
+import { getDailyCost } from "@/app/actions/sync";
 import StatsContent from "./StatsContent";
 
 export default async function EstatisticasPage() {
@@ -14,9 +15,10 @@ export default async function EstatisticasPage() {
   }
 
   // Fetch data
-  const [employeesResult, checksResult] = await Promise.all([
+  const [employeesResult, checksResult, dailyCost] = await Promise.all([
     fetchEmployees(),
     fetchPontoChecks(),
+    getDailyCost(),
   ]);
 
   if (!employeesResult.success && employeesResult.error === "Sessão expirada") {
@@ -27,6 +29,7 @@ export default async function EstatisticasPage() {
     <StatsContent
       employees={employeesResult.success ? employeesResult.data : []}
       checks={checksResult.success ? checksResult.data : []}
+      initialDailyCost={dailyCost}
     />
   );
 }
