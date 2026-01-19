@@ -51,8 +51,12 @@ export default function LeafletMap({
     });
   }, []);
 
-  // Filter checks based on selection
+  // Filter checks based on selection and ensure GPS coordinates exist for map display
   const filteredChecks = checks.filter((check) => {
+    // Must have valid GPS coordinates to display on map
+    if (!check.latitude || !check.longitude) {
+      return false;
+    }
     if (selectedEmployee && check.funcionarioId !== selectedEmployee) {
       return false;
     }
@@ -66,13 +70,13 @@ export default function LeafletMap({
     return true;
   });
 
-  // Calculate map center based on checks
+  // Calculate map center based on checks (filteredChecks already have valid coordinates)
   const mapCenter: [number, number] =
     filteredChecks.length > 0
       ? [
-          filteredChecks.reduce((sum, c) => sum + c.latitude, 0) /
+          filteredChecks.reduce((sum, c) => sum + (c.latitude ?? 0), 0) /
             filteredChecks.length,
-          filteredChecks.reduce((sum, c) => sum + c.longitude, 0) /
+          filteredChecks.reduce((sum, c) => sum + (c.longitude ?? 0), 0) /
             filteredChecks.length,
         ]
       : DEFAULT_CENTER;
@@ -236,11 +240,11 @@ export default function LeafletMap({
           </Circle>
         ))}
 
-        {/* Employee markers */}
+        {/* Employee markers - only render checks with valid coordinates */}
         {filteredChecks.map((check) => (
           <Marker
             key={check.id}
-            position={[check.latitude, check.longitude]}
+            position={[check.latitude!, check.longitude!]}
             icon={createEmployeeIcon(check.funcionarioFoto, check.tipoNumero)}
           >
             <Popup>

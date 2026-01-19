@@ -104,8 +104,8 @@ export type PontoCheck = {
   tipoNumero: number;
   dataHora: string;
   dataHoraStr: string;
-  latitude: number;
-  longitude: number;
+  latitude?: number; // Optional - may not be available if GPS was disabled/unavailable
+  longitude?: number; // Optional - may not be available if GPS was disabled/unavailable
   obraId?: number;
   obraNome?: string;
   geofence?: {

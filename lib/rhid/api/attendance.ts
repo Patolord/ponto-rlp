@@ -66,8 +66,9 @@ export async function fetchPontoChecks(
     }
 
     // Sort records by dateTime to determine sequential position
+    // Include all records, not just those with GPS coordinates
+    // (employees may check in without valid GPS due to indoor location, disabled GPS, etc.)
     const sortedRecords = [...employee.listAfdMobilePerson]
-      .filter((r) => r.latitude && r.longitude)
       .sort((a, b) => {
         const dateA = new Date(a.dateTime).getTime();
         const dateB = new Date(b.dateTime).getTime();
@@ -91,8 +92,8 @@ export async function fetchPontoChecks(
         tipoNumero: sequentialType,
         dataHora: record.dateTime,
         dataHoraStr: record.dateTimeStr,
-        latitude: record.latitude,
-        longitude: record.longitude,
+        latitude: record.latitude || undefined,
+        longitude: record.longitude || undefined,
         obraId: record.geofence?.id,
         obraNome: record.geofence?.name,
         geofence: record.geofence
