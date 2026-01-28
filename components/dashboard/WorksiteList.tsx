@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import type { Worksite, PontoCheck } from "@/lib/rhid";
-import { Search, MapPin, Users, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, MapPin, Users, Clock, ChevronDown, Building2 } from "lucide-react";
 
 type EmployeeAtWorksite = {
   id: number;
@@ -30,15 +30,13 @@ export default function WorksiteList({
   const [search, setSearch] = useState("");
   const [expandedWorksite, setExpandedWorksite] = useState<number | null>(null);
 
-  // Parse date from RHID format (handles both ISO and "DD/MM/YYYY HH:mm:ss")
+  // Parse date from RHID format
   const parseRhidDate = (dateStr: string): number => {
-    // Try ISO format first
-    let date = new Date(dateStr);
+    const date = new Date(dateStr);
     if (!isNaN(date.getTime())) {
       return date.getTime();
     }
     
-    // Try DD/MM/YYYY HH:mm:ss format
     const match = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
     if (match) {
       const [, day, month, year, hour, min, sec] = match;
@@ -52,11 +50,10 @@ export default function WorksiteList({
       ).getTime();
     }
     
-    // Fallback to 0 if unparseable
     return 0;
   };
 
-  // Build map of employees per worksite from checks
+  // Build map of employees per worksite
   const employeesByWorksite = useMemo(() => {
     const wsMap = new Map<number, Map<number, EmployeeAtWorksite>>();
     
@@ -84,9 +81,7 @@ export default function WorksiteList({
         const firstTime = parseRhidDate(existing.firstCheckIn);
         const lastTime = parseRhidDate(existing.lastCheck);
         
-        if (checkTime < firstTime) {
-          existing.firstCheckIn = check.dataHora;
-        }
+        if (checkTime < firstTime) existing.firstCheckIn = check.dataHora;
         if (checkTime > lastTime) {
           existing.lastCheck = check.dataHora;
           existing.lastCheckType = check.tipo;
@@ -97,7 +92,7 @@ export default function WorksiteList({
     return wsMap;
   }, [checks]);
 
-  // Filter worksites by search
+  // Filter worksites
   const filteredWorksites = useMemo(() => {
     const searchLower = search.toLowerCase();
     return worksites
@@ -105,14 +100,13 @@ export default function WorksiteList({
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }, [worksites, search]);
 
-  // Total employees across all worksites
+  // Total employees
   const totalEmployees = worksites.reduce(
     (sum, ws) => sum + ws.funcionariosCount,
     0
   );
 
   const formatTime = (dateStr: string) => {
-    // Try parsing as ISO date first
     const date = new Date(dateStr);
     if (!isNaN(date.getTime())) {
       return date.toLocaleTimeString("pt-BR", {
@@ -121,11 +115,8 @@ export default function WorksiteList({
       });
     }
     
-    // Try to extract time from DD/MM/YYYY HH:mm:ss format
     const match = dateStr.match(/(\d{2}):(\d{2})/);
-    if (match) {
-      return `${match[1]}:${match[2]}`;
-    }
+    if (match) return `${match[1]}:${match[2]}`;
     
     return "--:--";
   };
@@ -147,26 +138,21 @@ export default function WorksiteList({
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-4 border-b border-white/10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-slate-400" />
-            <span className="text-sm font-medium text-slate-300">
-              Obras ({worksites.length})
-            </span>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+      {/* Search */}
+      <div className="px-5 py-4 border-b border-slate-100">
+        <div className="relative group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <Input
             type="text"
             placeholder="Buscar obra..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-slate-500 h-9 text-sm"
+            className="
+              pl-10 h-10 bg-slate-50 border-slate-200 text-slate-800 text-sm
+              placeholder:text-slate-400 rounded-xl
+              focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20
+              focus:bg-white transition-all duration-200
+            "
           />
         </div>
       </div>
@@ -174,64 +160,102 @@ export default function WorksiteList({
       {/* Worksite list */}
       <div className="flex-1 overflow-y-auto">
         {filteredWorksites.length === 0 ? (
-          <div className="p-4 text-center text-slate-500 text-sm">
-            Nenhuma obra encontrada
+          <div className="flex flex-col items-center justify-center h-48 px-6">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center mb-4">
+              <Building2 className="w-5 h-5 text-slate-400" />
+            </div>
+            <p className="text-sm text-slate-500 text-center">
+              Nenhuma obra encontrada
+            </p>
           </div>
         ) : (
-          <ul className="divide-y divide-white/5">
-            {filteredWorksites.map((worksite) => {
+          <ul className="py-2">
+            {filteredWorksites.map((worksite, index) => {
               const isSelected = selectedWorksite === worksite.id;
               const isExpanded = expandedWorksite === worksite.id;
               const employeesAtSite = employeesByWorksite.get(worksite.id);
               const employeeList = employeesAtSite 
                 ? Array.from(employeesAtSite.values()).sort((a, b) => a.name.localeCompare(b.name))
                 : [];
+              const hasEmployees = employeeList.length > 0;
 
               return (
-                <li key={worksite.id}>
+                <li 
+                  key={worksite.id}
+                  className="fade-in-up px-3"
+                  style={{ animationDelay: `${Math.min(index * 20, 200)}ms` }}
+                >
                   <button
                     onClick={() => handleWorksiteClick(worksite.id, isSelected)}
-                    className={`w-full px-4 py-3 flex items-center gap-3 transition-colors text-left ${
-                      isSelected
-                        ? "bg-indigo-500/20"
-                        : "hover:bg-white/5"
-                    }`}
+                    className={`
+                      w-full px-3 py-3 rounded-xl flex items-center gap-3 
+                      transition-all duration-200 text-left group
+                      ${isSelected
+                        ? "bg-blue-50 border border-blue-200 shadow-sm"
+                        : "hover:bg-slate-50 border border-transparent"
+                      }
+                    `}
                   >
                     {/* Icon */}
                     <div
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        isSelected
-                          ? "bg-indigo-500"
-                          : "bg-white/10"
-                      }`}
+                      className={`
+                        w-9 h-9 rounded-lg flex items-center justify-center shrink-0
+                        transition-all duration-200 border
+                        ${isSelected
+                          ? "bg-gradient-to-br from-blue-500 to-blue-600 border-blue-300 shadow-lg shadow-blue-500/20"
+                          : hasEmployees
+                            ? "bg-slate-100 border-slate-200 group-hover:border-slate-300"
+                            : "bg-slate-50 border-slate-200"
+                        }
+                      `}
                     >
                       <MapPin
-                        className={`w-4 h-4 ${
-                          isSelected ? "text-white" : "text-slate-400"
-                        }`}
+                        className={`
+                          w-4 h-4 transition-colors
+                          ${isSelected 
+                            ? "text-white" 
+                            : hasEmployees 
+                              ? "text-slate-500" 
+                              : "text-slate-400"
+                          }
+                        `}
                       />
                     </div>
 
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p
-                        className={`text-sm font-medium truncate ${
-                          isSelected ? "text-white" : "text-slate-200"
-                        }`}
+                        className={`
+                          text-sm font-medium truncate transition-colors
+                          ${isSelected 
+                            ? "text-blue-900" 
+                            : "text-slate-700 group-hover:text-slate-900"
+                          }
+                        `}
                       >
                         {worksite.nome}
                       </p>
+                      {hasEmployees && (
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {employeeList.length} {employeeList.length === 1 ? "funcionário" : "funcionários"} ativos
+                        </p>
+                      )}
                     </div>
 
-                    {/* Employee count */}
+                    {/* Count & expand */}
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 text-slate-400">
-                        <Users className="w-3.5 h-3.5" />
-                        <span className="text-xs">{worksite.funcionariosCount}</span>
+                      <div className={`
+                        flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-semibold
+                        ${hasEmployees 
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                          : "bg-slate-100 text-slate-500 border border-slate-200"
+                        }
+                      `}>
+                        <Users className="w-3 h-3" />
+                        <span className="tabular-nums">{worksite.funcionariosCount}</span>
                       </div>
                       
-                      {/* Expand indicator */}
-                      {employeeList.length > 0 && (
+                      {hasEmployees && (
                         <div
                           role="button"
                           tabIndex={0}
@@ -242,42 +266,44 @@ export default function WorksiteList({
                               toggleExpand(e as unknown as React.MouseEvent, worksite.id);
                             }
                           }}
-                          className="p-1 hover:bg-white/10 rounded cursor-pointer"
+                          className={`
+                            p-1.5 rounded-lg transition-all duration-200 cursor-pointer
+                            ${isExpanded 
+                              ? "bg-slate-200 rotate-180" 
+                              : "hover:bg-slate-100"
+                            }
+                          `}
                         >
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4 text-slate-400" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4 text-slate-400" />
-                          )}
+                          <ChevronDown className="w-4 h-4 text-slate-400 transition-transform duration-200" />
                         </div>
                       )}
                     </div>
                   </button>
                   
                   {/* Expanded employee list */}
-                  {isExpanded && employeeList.length > 0 && (
-                    <div className="bg-white/5 border-t border-white/5">
-                      <div className="px-4 py-2 border-b border-white/5">
-                        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">
+                  {isExpanded && hasEmployees && (
+                    <div className="mx-3 mt-1 mb-2 rounded-xl bg-slate-50 border border-slate-200 overflow-hidden scale-in">
+                      <div className="px-3 py-2 border-b border-slate-200 bg-slate-100">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
                           Funcionários na obra
                         </span>
                       </div>
-                      <ul className="divide-y divide-white/5">
+                      <ul className="divide-y divide-slate-100">
                         {employeeList.map((emp) => (
-                          <li key={emp.id} className="px-4 py-2 flex items-center gap-3">
+                          <li key={emp.id} className="px-3 py-2.5 flex items-center gap-2.5 hover:bg-white transition-colors">
                             {/* Avatar */}
-                            <div className="flex-shrink-0">
+                            <div className="shrink-0">
                               {emp.foto ? (
                                 <img
                                   src={emp.foto}
                                   alt={emp.name}
-                                  className="w-7 h-7 rounded-full object-cover"
+                                  className="w-6 h-6 rounded-lg object-cover border border-slate-200"
                                   onError={(e) => {
                                     (e.target as HTMLImageElement).style.display = "none";
                                   }}
                                 />
                               ) : (
-                                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center text-white font-medium text-xs">
+                                <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-500 font-medium text-[10px] border border-slate-200">
                                   {emp.name.charAt(0).toUpperCase()}
                                 </div>
                               )}
@@ -285,15 +311,15 @@ export default function WorksiteList({
                             
                             {/* Name */}
                             <div className="flex-1 min-w-0">
-                              <p className="text-xs text-slate-300 truncate">
+                              <p className="text-xs text-slate-700 truncate font-medium">
                                 {emp.name}
                               </p>
                             </div>
                             
                             {/* Check-in time */}
-                            <div className="flex items-center gap-1 text-xs text-slate-500">
+                            <div className="flex items-center gap-1 text-[10px] text-slate-500">
                               <Clock className="w-3 h-3" />
-                              {formatTime(emp.firstCheckIn)}
+                              <span className="tabular-nums">{formatTime(emp.firstCheckIn)}</span>
                             </div>
                           </li>
                         ))}
@@ -309,10 +335,10 @@ export default function WorksiteList({
 
       {/* Footer stats */}
       {worksites.length > 0 && (
-        <div className="p-4 border-t border-white/10">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-slate-500">Total funcionários</span>
-            <span className="text-slate-300 font-medium">{totalEmployees}</span>
+        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-medium">Total de funcionários</span>
+            <span className="tabular-nums text-sm text-blue-600 font-semibold">{totalEmployees}</span>
           </div>
         </div>
       )}

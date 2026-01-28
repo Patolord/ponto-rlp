@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import type { Employee, PontoCheck } from "@/lib/rhid";
-import { Search, Users, Clock, MapPin, AlertCircle } from "lucide-react";
+import { Search, Clock, MapPin, AlertCircle, TrendingUp } from "lucide-react";
 import type { AttendanceFilter } from "./DashboardHeader";
 
 export type EmployeeWithAttendance = Employee & {
@@ -31,15 +31,13 @@ export default function EmployeeList({
 }: EmployeeListProps) {
   const [search, setSearch] = useState("");
 
-  // Parse date from RHID format (handles both ISO and "DD/MM/YYYY HH:mm:ss")
+  // Parse date from RHID format
   const parseRhidDate = (dateStr: string): number => {
-    // Try ISO format first
     const date = new Date(dateStr);
     if (!isNaN(date.getTime())) {
       return date.getTime();
     }
     
-    // Try DD/MM/YYYY HH:mm:ss format
     const match = dateStr.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
     if (match) {
       const [, day, month, year, hour, min, sec] = match;
@@ -53,13 +51,11 @@ export default function EmployeeList({
       ).getTime();
     }
     
-    // Fallback to 0 if unparseable
     return 0;
   };
 
-  // Build employee attendance data with first and last checks
+  // Build employee attendance data
   const employeesWithAttendance = useMemo(() => {
-    // Map to store first and last checks per employee
     const checkData = new Map<number, { first: PontoCheck; last: PontoCheck }>();
     
     for (const check of checks) {
@@ -71,30 +67,22 @@ export default function EmployeeList({
         const firstTime = parseRhidDate(existing.first.dataHora);
         const lastTime = parseRhidDate(existing.last.dataHora);
         
-        if (checkTime < firstTime) {
-          existing.first = check;
-        }
-        if (checkTime > lastTime) {
-          existing.last = check;
-        }
+        if (checkTime < firstTime) existing.first = check;
+        if (checkTime > lastTime) existing.last = check;
       }
     }
     
     return checkData;
   }, [checks]);
 
-  // Build employee list by merging employees array with employees found in checks
-  // This ensures we have all employees even if the employees API returns incomplete data
+  // Build employee list
   const employeeList = useMemo(() => {
     const uniqueEmployees = new Map<number, Employee>();
     
-    // First, add all employees from the employees array
     for (const emp of employees) {
       uniqueEmployees.set(emp.id, emp);
     }
     
-    // Then, add any employees found in checks that aren't in the employees array
-    // This ensures we capture everyone who checked in, even if the employees API is incomplete
     for (const check of checks) {
       if (!uniqueEmployees.has(check.funcionarioId)) {
         uniqueEmployees.set(check.funcionarioId, {
@@ -109,7 +97,7 @@ export default function EmployeeList({
     return Array.from(uniqueEmployees.values());
   }, [employees, checks]);
 
-  // Build enhanced employee list with attendance data
+  // Enhanced employee list
   const enhancedEmployees: EmployeeWithAttendance[] = useMemo(() => {
     return employeeList.map((emp) => {
       const checkInfo = employeesWithAttendance.get(emp.id);
@@ -124,26 +112,20 @@ export default function EmployeeList({
     });
   }, [employeeList, employeesWithAttendance]);
 
-  // Filter employees by search and attendance filter
+  // Filter employees
   const filteredEmployees = useMemo(() => {
     const searchLower = search.toLowerCase();
     return enhancedEmployees
       .filter((emp) => {
-        // Search filter
         if (!emp.nome.toLowerCase().includes(searchLower)) return false;
-        
-        // Attendance filter
         if (attendanceFilter === "present" && !emp.isPresent) return false;
         if (attendanceFilter === "missing" && emp.isPresent) return false;
-        
         return true;
       })
       .sort((a, b) => {
-        // When showing missing, keep them at top
         if (attendanceFilter === "missing") {
           return a.nome.localeCompare(b.nome);
         }
-        // Otherwise, sort present first, then by name
         if (a.isPresent !== b.isPresent) {
           return a.isPresent ? -1 : 1;
         }
@@ -154,35 +136,26 @@ export default function EmployeeList({
   const getCheckStatus = (employee: EmployeeWithAttendance) => {
     if (!employee.lastCheck) return null;
 
-    // 0=entrada (green), 1=almoco (amber), 2=retorno (blue), 3=saida (red)
-    const statusColors: Record<number, string> = {
-      0: "bg-green-500",
-      1: "bg-amber-500",
-      2: "bg-blue-500",
-      3: "bg-red-500",
+    const statusConfig: Record<number, { color: string; ring: string }> = {
+      0: { color: "bg-emerald-500", ring: "ring-emerald-500/30" },
+      1: { color: "bg-amber-500", ring: "ring-amber-500/30" },
+      2: { color: "bg-violet-500", ring: "ring-violet-500/30" },
+      3: { color: "bg-rose-500", ring: "ring-rose-500/30" },
     };
 
-    return statusColors[employee.lastCheck.tipoNumero] || "bg-gray-500";
+    return statusConfig[employee.lastCheck.tipoNumero] || { color: "bg-slate-400", ring: "" };
   };
 
   const formatTime = (dateStr: string, fallbackStr?: string) => {
-    // Try parsing as ISO date first
     const date = new Date(dateStr);
     
-    // If invalid, try parsing DD/MM/YYYY HH:mm:ss format
     if (isNaN(date.getTime())) {
-      // Try to extract time from dateTimeStr format like "17/01/2026 08:30:00"
       const match = dateStr.match(/(\d{2}):(\d{2})/);
-      if (match) {
-        return `${match[1]}:${match[2]}`;
-      }
+      if (match) return `${match[1]}:${match[2]}`;
       
-      // Try fallback string
       if (fallbackStr) {
         const fallbackMatch = fallbackStr.match(/(\d{2}):(\d{2})/);
-        if (fallbackMatch) {
-          return `${fallbackMatch[1]}:${fallbackMatch[2]}`;
-        }
+        if (fallbackMatch) return `${fallbackMatch[1]}:${fallbackMatch[2]}`;
       }
       
       return "--:--";
@@ -194,105 +167,137 @@ export default function EmployeeList({
     });
   };
 
-  const getFilterLabel = () => {
-    switch (attendanceFilter) {
-      case "present":
-        return "Presentes";
-      case "missing":
-        return "Ausentes";
-      default:
-        return "Funcionários";
-    }
+  const getCheckTypeLabel = (tipo: string) => {
+    const labels: Record<string, string> = {
+      entrada: "Entrada",
+      almoco_saida: "Almoço",
+      almoco_retorno: "Retorno",
+      saida: "Saída",
+    };
+    return labels[tipo] || tipo;
   };
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="p-4 border-b border-white/10">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-slate-400" />
-            <span className="text-sm font-medium text-slate-300">
-              {getFilterLabel()} ({filteredEmployees.length})
-            </span>
-          </div>
-        </div>
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+      {/* Search */}
+      <div className="px-5 py-4 border-b border-slate-100">
+        <div className="relative group">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
           <Input
             type="text"
             placeholder="Buscar funcionário..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-slate-500 h-9 text-sm"
+            className="
+              pl-10 h-10 bg-slate-50 border-slate-200 text-slate-800 text-sm
+              placeholder:text-slate-400 rounded-xl
+              focus:border-blue-300 focus:ring-2 focus:ring-blue-500/20
+              focus:bg-white transition-all duration-200
+            "
           />
         </div>
+        
+        {/* Filter indicator */}
+        {attendanceFilter !== "all" && (
+          <div className="mt-3 flex items-center gap-2">
+            <span className={`
+              inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium
+              ${attendanceFilter === "present" 
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                : "bg-red-50 text-red-700 border border-red-200"
+              }
+            `}>
+              <TrendingUp className="w-3 h-3" />
+              {attendanceFilter === "present" ? "Presentes" : "Ausentes"}: {filteredEmployees.length}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Employee list */}
       <div className="flex-1 overflow-y-auto">
         {filteredEmployees.length === 0 ? (
-          <div className="p-4 text-center text-slate-500 text-sm">
-            {attendanceFilter === "missing"
-              ? "Todos os funcionários registraram ponto hoje!"
-              : attendanceFilter === "present"
-                ? "Nenhum funcionário presente"
-                : "Nenhum funcionário encontrado"}
+          <div className="flex flex-col items-center justify-center h-48 px-6">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center mb-4">
+              <Search className="w-5 h-5 text-slate-400" />
+            </div>
+            <p className="text-sm text-slate-500 text-center">
+              {attendanceFilter === "missing"
+                ? "Todos registraram ponto hoje!"
+                : attendanceFilter === "present"
+                  ? "Nenhum funcionário presente"
+                  : "Nenhum funcionário encontrado"}
+            </p>
           </div>
         ) : (
-          <ul className="divide-y divide-white/5">
-            {filteredEmployees.map((employee) => {
+          <ul className="py-2">
+            {filteredEmployees.map((employee, index) => {
               const isSelected = selectedEmployee === employee.id;
               const checkStatus = getCheckStatus(employee);
 
               return (
-                <li key={employee.id}>
+                <li 
+                  key={employee.id}
+                  className="fade-in-up px-3"
+                  style={{ animationDelay: `${Math.min(index * 20, 200)}ms` }}
+                >
                   <button
-                    onClick={() =>
-                      onSelectEmployee(isSelected ? null : employee.id)
-                    }
-                    className={`w-full px-4 py-3 flex items-center gap-3 transition-colors text-left ${
-                      isSelected
-                        ? "bg-indigo-500/20"
+                    onClick={() => onSelectEmployee(isSelected ? null : employee.id)}
+                    className={`
+                      w-full px-3 py-3 rounded-xl flex items-center gap-3 
+                      transition-all duration-200 text-left group
+                      ${isSelected
+                        ? "bg-blue-50 border border-blue-200 shadow-sm"
                         : employee.isPresent
-                          ? "hover:bg-white/5"
-                          : "hover:bg-red-500/10 bg-red-500/5"
-                    }`}
+                          ? "hover:bg-slate-50 border border-transparent"
+                          : "hover:bg-red-50/50 border border-transparent bg-red-50/30"
+                      }
+                    `}
                   >
                     {/* Avatar */}
-                    <div className="relative flex-shrink-0">
+                    <div className="relative shrink-0">
                       {employee.foto ? (
                         <img
                           src={employee.foto}
                           alt={employee.nome}
-                          className={`w-10 h-10 rounded-full object-cover ${
-                            !employee.isPresent ? "opacity-50 grayscale" : ""
-                          }`}
+                          className={`
+                            w-10 h-10 rounded-xl object-cover border-2
+                            ${!employee.isPresent ? "opacity-50 grayscale border-slate-200" : "border-slate-200"}
+                            ${isSelected ? "border-blue-300" : ""}
+                          `}
                           onError={(e) => {
                             (e.target as HTMLImageElement).style.display = "none";
                           }}
                         />
                       ) : (
                         <div
-                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium text-sm ${
-                            employee.isPresent
-                              ? "bg-gradient-to-br from-indigo-500 to-blue-600"
-                              : "bg-gradient-to-br from-slate-600 to-slate-700"
-                          }`}
+                          className={`
+                            w-10 h-10 rounded-xl flex items-center justify-center 
+                            text-sm font-semibold border-2
+                            ${employee.isPresent
+                              ? isSelected
+                                ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white border-blue-300"
+                                : "bg-gradient-to-br from-slate-100 to-slate-200 text-slate-600 border-slate-200"
+                              : "bg-slate-100 text-slate-400 border-slate-200"
+                            }
+                          `}
                         >
                           {employee.nome.charAt(0).toUpperCase()}
                         </div>
                       )}
+                      
                       {/* Status indicator */}
                       {checkStatus ? (
                         <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-900 ${checkStatus}`}
+                          className={`
+                            absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full 
+                            border-2 border-white ring-2 ${checkStatus.ring}
+                            ${checkStatus.color}
+                          `}
                         />
                       ) : (
-                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-slate-900 bg-slate-600 flex items-center justify-center">
-                          <AlertCircle className="w-2 h-2 text-slate-400" />
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-slate-300 flex items-center justify-center">
+                          <AlertCircle className="w-2 h-2 text-slate-500" />
                         </span>
                       )}
                     </div>
@@ -300,54 +305,54 @@ export default function EmployeeList({
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p
-                        className={`text-sm font-medium truncate ${
-                          isSelected
-                            ? "text-white"
+                        className={`
+                          text-sm font-medium truncate transition-colors
+                          ${isSelected
+                            ? "text-blue-900"
                             : employee.isPresent
-                              ? "text-slate-200"
-                              : "text-red-300"
-                        }`}
+                              ? "text-slate-700 group-hover:text-slate-900"
+                              : "text-red-700"
+                          }
+                        `}
                       >
                         {employee.nome}
                       </p>
                       
-                      {/* Present: Show worksite and first check-in time */}
                       {employee.isPresent && employee.firstCheck && (
-                        <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex items-center gap-2 mt-1">
                           {employee.worksiteName && (
-                            <span className="flex items-center gap-1 text-xs text-slate-500">
+                            <span className="flex items-center gap-1 text-xs text-slate-400">
                               <MapPin className="w-3 h-3" />
-                              <span className="truncate max-w-[100px]">
+                              <span className="truncate max-w-[80px]">
                                 {employee.worksiteName}
                               </span>
                             </span>
                           )}
-                          <span className="flex items-center gap-1 text-xs text-green-500">
+                          <span className="flex items-center gap-1 text-xs text-emerald-600">
                             <Clock className="w-3 h-3" />
-                            {formatTime(employee.firstCheck.dataHora, employee.firstCheck.dataHoraStr)}
+                            <span className="tabular-nums">
+                              {formatTime(employee.firstCheck.dataHora, employee.firstCheck.dataHoraStr)}
+                            </span>
                           </span>
                         </div>
                       )}
                       
-                      {/* Missing: Show warning */}
                       {!employee.isPresent && (
-                        <p className="text-xs text-red-400 mt-0.5">
+                        <p className="text-xs text-red-500 mt-0.5 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
                           Sem registro hoje
                         </p>
                       )}
                     </div>
 
-                    {/* Current status time badge (last check) */}
+                    {/* Time badge */}
                     {employee.isPresent && employee.lastCheck && (
-                      <div className="text-right flex-shrink-0">
-                        <span className="text-xs text-slate-400 block">
+                      <div className="text-right shrink-0">
+                        <span className="tabular-nums text-xs text-slate-600 block font-medium">
                           {formatTime(employee.lastCheck.dataHora, employee.lastCheck.dataHoraStr)}
                         </span>
-                        <span className="text-[10px] text-slate-500">
-                          {employee.lastCheck.tipo === "entrada" && "Entrada"}
-                          {employee.lastCheck.tipo === "almoco_saida" && "Almoço"}
-                          {employee.lastCheck.tipo === "almoco_retorno" && "Retorno"}
-                          {employee.lastCheck.tipo === "saida" && "Saída"}
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider">
+                          {getCheckTypeLabel(employee.lastCheck.tipo)}
                         </span>
                       </div>
                     )}
