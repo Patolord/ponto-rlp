@@ -1,13 +1,35 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 
 export const metadata: Metadata = {
   title: "Ponto RLP — Sistema de Controle de Ponto",
   description: "Dashboard de controle de ponto com visualização em tempo real",
   icons: {
-    icon: "/convex.svg",
+    icon: [
+      { url: "/favicon/favicon.ico", sizes: "any" },
+      { url: "/favicon/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+    ],
+    apple: "/favicon/apple-touch-icon.png",
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "RLP Ponto",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#ffffff",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -32,6 +54,9 @@ export default function RootLayout({
         <div className="relative z-10">
           <Providers>{children}</Providers>
         </div>
+
+        {/* PWA Service Worker Registration */}
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );
